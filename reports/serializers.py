@@ -160,10 +160,12 @@ class EmployeeDailyReportSerializer(serializers.ModelSerializer):
             "taken_tasks",
             "completed_tasks",
             "blockers",
+            "blocker_category",
+            "is_late",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("user", "username", "created_at", "updated_at")
+        read_only_fields = ("user", "username", "is_late", "created_at", "updated_at")
 
     def get_user_full_name(self, obj):
         full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()

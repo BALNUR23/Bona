@@ -105,6 +105,43 @@ class Task(models.Model):
         return self.title
 
 
+class TaskMoveLog(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="move_logs")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="task_move_logs",
+    )
+    from_column = models.ForeignKey(
+        Column,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="move_logs_from",
+    )
+    to_column = models.ForeignKey(
+        Column,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="move_logs_to",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["actor"]),
+            models.Index(fields=["task"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.task_id}:{self.from_column_id}->{self.to_column_id}"
+
+
 class TaskComment(models.Model):
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(

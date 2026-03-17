@@ -441,6 +441,11 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API for onboarding platform",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    "SORT_OPERATIONS": True,
+    "SWAGGER_UI_SETTINGS": {
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+    },
 }
 
 # ======================

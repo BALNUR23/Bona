@@ -5,8 +5,8 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 from django.utils import translation
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
-from rest_framework.exceptions import ErrorDetail
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -27,7 +27,6 @@ from accounts.models import (
 )
 from accounts.serializers import PasswordChangeSerializer, UserProfileUpdateSerializer
 from content.models import Feedback, Instruction, News
-from common.models import Notification
 from content.serializers import (
     InstructionSerializer,
     NewsDetailSerializer,
@@ -41,13 +40,7 @@ from reports.models import OnboardingReport
 from work_schedule.models import ProductionCalendar
 from work_schedule.views import MyScheduleAPIView, WorkScheduleListAPIView
 from django.contrib.sessions.models import Session
-from common.i18n import request_language, role_label, tr
-from common.notification_codes import NotificationCode, NotificationEntity
-
-
-def _department_head_role_name():
-    # Legacy compatibility: old branches used DEPARTMENT_HEAD role.
-    return getattr(Role.Name, "DEPARTMENT_HEAD", "DEPARTMENT_HEAD")
+from common.i18n import role_label
 
 
 def _role_to_front(role: Role | None) -> str:
@@ -55,12 +48,11 @@ def _role_to_front(role: Role | None) -> str:
         return ""
     mapping = {
         Role.Name.SUPER_ADMIN: "superadmin",
-        Role.Name.ADMINISTRATOR: "administrator",
         Role.Name.ADMIN: "admin",
+        Role.Name.DEPARTMENT_HEAD: "department_head",
         Role.Name.TEAMLEAD: "projectmanager",
         Role.Name.EMPLOYEE: "employee",
         Role.Name.INTERN: "intern",
-        _department_head_role_name(): "department_head",
     }
     return mapping.get(role.name, role.name.lower())
 
@@ -111,12 +103,7 @@ def _ensure_content_manager(user: User):
 def _is_privileged_target(target: User) -> bool:
     if not getattr(target, "role_id", None):
         return False
-    return target.role.name in {
-        _department_head_role_name(),
-        Role.Name.ADMINISTRATOR,
-        Role.Name.ADMIN,
-        Role.Name.SUPER_ADMIN,
-    }
+    return target.role.name in {Role.Name.DEPARTMENT_HEAD, Role.Name.ADMIN, Role.Name.SUPER_ADMIN}
 
 
 def _resolve_role(value: str | None) -> Role | None:
@@ -128,9 +115,8 @@ def _resolve_role(value: str | None) -> Role | None:
         "PROJECT_MANAGER": Role.Name.TEAMLEAD,
         "TEAMLEAD": Role.Name.TEAMLEAD,
         "TEAM_LEAD": Role.Name.TEAMLEAD,
-        "DEPARTMENTHEAD": Role.Name.ADMINISTRATOR,
-        "DEPARTMENT_HEAD": Role.Name.ADMINISTRATOR,
-        "ADMINISTRATOR": Role.Name.ADMINISTRATOR,
+        "DEPARTMENTHEAD": Role.Name.DEPARTMENT_HEAD,
+        "DEPARTMENT_HEAD": Role.Name.DEPARTMENT_HEAD,
         "ADMIN": Role.Name.ADMIN,
         "SUPERADMIN": Role.Name.SUPER_ADMIN,
         "SUPER_ADMIN": Role.Name.SUPER_ADMIN,
@@ -143,19 +129,36 @@ def _resolve_role(value: str | None) -> Role | None:
     return Role.objects.filter(name=role_name).first()
 
 
-def _feedback_admin_recipients(*, exclude_user_id: int | None = None):
-    role_names = {
-        Role.Name.SUPER_ADMIN,
-        Role.Name.ADMINISTRATOR,
-        *AccessPolicy.LEGACY_SYSTEM_ADMIN_NAMES,
-    }
-    qs = User.objects.filter(is_active=True, role__name__in=role_names)
-    if exclude_user_id:
-        qs = qs.exclude(id=exclude_user_id)
-    return qs
+class FrontendLoginRequestSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
+
+
+class FrontendLoginResponseSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    landing = serializers.CharField()
+    user = serializers.DictField()
+
+
+class FrontendLogoutRequestSerializer(serializers.Serializer):
+    refresh = serializers.CharField(required=False, allow_blank=True)
+
+
+class FrontendMessageSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
+
+class FrontendSetRoleRequestSerializer(serializers.Serializer):
+    role = serializers.CharField()
 
 
 class FrontendLoginAPIView(APIView):
+    @extend_schema(
+        tags=["Frontend API"],
+        request=FrontendLoginRequestSerializer,
+        responses={200: FrontendLoginResponseSerializer},
+    )
     def post(self, request):
         username = (request.data.get("username") or "").strip()
         password = request.data.get("password") or ""
@@ -184,6 +187,11 @@ class FrontendLoginAPIView(APIView):
 class FrontendLogoutAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Frontend API"],
+        request=FrontendLogoutRequestSerializer,
+        responses={200: FrontendMessageSerializer},
+    )
     def post(self, request):
         refresh = request.data.get("refresh")
         if refresh:
@@ -198,9 +206,11 @@ class FrontendLogoutAPIView(APIView):
 class FrontendMeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(tags=["Frontend API"], responses={200: serializers.DictField()})
     def get(self, request):
         return Response(_user_to_front_payload(request.user))
 
+    @extend_schema(tags=["Frontend API"], request=serializers.DictField(), responses={200: serializers.DictField()})
     def patch(self, request):
         serializer = UserProfileUpdateSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -256,18 +266,14 @@ class FrontendUsersCollectionAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        _ensure_admin_like(request.user)
         qs = User.objects.select_related("role", "department", "position", "manager").order_by("id")
-        if AccessPolicy.is_admin_like(request.user):
-            # Admins see all users; ADMIN (dept head) is scoped to own dept
-            if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
-                qs = qs.filter(
-                    Q(role__name=Role.Name.INTERN)
-                    | Q(role__name=Role.Name.EMPLOYEE, department_id=request.user.department_id)
-                    | Q(role__name=Role.Name.TEAMLEAD, department_id=request.user.department_id)
-                )
-        else:
-            # Non-admin users (Employee, TeamLead, Intern) see the company directory
-            qs = qs.filter(is_active=True).exclude(role__name=Role.Name.SUPER_ADMIN)
+        if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
+            qs = qs.filter(
+                Q(role__name=Role.Name.INTERN)
+                | Q(role__name=Role.Name.EMPLOYEE, department_id=request.user.department_id)
+                | Q(role__name=Role.Name.TEAMLEAD, department_id=request.user.department_id)
+            )
         search = (request.query_params.get("search") or "").strip()
         if search:
             qs = qs.filter(
@@ -319,12 +325,7 @@ class FrontendUsersCollectionAPIView(APIView):
             if not user.department_id:
                 user.department_id = subdivision.department_id
         if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
-            if user.role and user.role.name in {
-                _department_head_role_name(),
-                Role.Name.ADMINISTRATOR,
-                Role.Name.ADMIN,
-                Role.Name.SUPER_ADMIN,
-            }:
+            if user.role and user.role.name in {Role.Name.DEPARTMENT_HEAD, Role.Name.ADMIN, Role.Name.SUPER_ADMIN}:
                 return Response({"detail": "Department head cannot create privileged users."}, status=403)
         if not user.role:
             return Response({"detail": "Default role INTERN not found. Run role seed first."}, status=400)
@@ -342,8 +343,7 @@ class FrontendUsersDetailAPIView(APIView):
     def _get_user(self, user_id: int) -> User:
         user = User.objects.select_related("role", "department", "position", "manager").filter(id=user_id).first()
         if not user:
-            lang = request_language(getattr(self, "request", None))
-            raise NotFound(ErrorDetail(tr("user_not_found", lang), code="user_not_found"))
+            raise NotFound("User not found.")
         return user
 
     def patch(self, request, user_id: int):
@@ -359,12 +359,7 @@ class FrontendUsersDetailAPIView(APIView):
         password = validated.pop("password", None)
         next_role = _resolve_role(role_name) if role_name else target.role
         if role_name and AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
-            if next_role and next_role.name in {
-                _department_head_role_name(),
-                Role.Name.ADMINISTRATOR,
-                Role.Name.ADMIN,
-                Role.Name.SUPER_ADMIN,
-            }:
+            if next_role and next_role.name in {Role.Name.DEPARTMENT_HEAD, Role.Name.ADMIN, Role.Name.SUPER_ADMIN}:
                 return Response({"detail": "Department head cannot assign privileged role."}, status=403)
 
         if next_role and next_role.name == Role.Name.TEAMLEAD:
@@ -421,8 +416,7 @@ class FrontendUsersToggleStatusAPIView(APIView):
         _ensure_admin_like(request.user)
         target = User.objects.filter(id=user_id).first()
         if not target:
-            lang = request_language(request)
-            raise NotFound(ErrorDetail(tr("user_not_found", lang), code="user_not_found"))
+            raise NotFound("User not found.")
         if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
             if _is_privileged_target(target):
                 return Response({"detail": "Department head cannot change status of privileged users."}, status=403)
@@ -436,32 +430,24 @@ class FrontendUsersToggleStatusAPIView(APIView):
 class FrontendUsersSetRoleAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=["Frontend API"],
+        request=FrontendSetRoleRequestSerializer,
+        responses={200: serializers.DictField()},
+    )
     def post(self, request, user_id: int):
         _ensure_admin_like(request.user)
         target = User.objects.filter(id=user_id).first()
         if not target:
-            lang = request_language(request)
-            raise NotFound(ErrorDetail(tr("user_not_found", lang), code="user_not_found"))
+            raise NotFound("User not found.")
         if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
             if _is_privileged_target(target):
                 return Response({"detail": "Department head cannot change role of privileged users."}, status=403)
         role = _resolve_role(request.data.get("role"))
         if not role:
-            lang = request_language(request)
-            return Response(
-                {
-                    "code": "invalid_role",
-                    "detail": tr("invalid_role", lang),
-                },
-                status=400,
-            )
+            return Response({"detail": "Invalid role."}, status=400)
         if AccessPolicy.is_admin(request.user) and not AccessPolicy.is_super_admin(request.user):
-            if role.name in {
-                _department_head_role_name(),
-                Role.Name.ADMINISTRATOR,
-                Role.Name.ADMIN,
-                Role.Name.SUPER_ADMIN,
-            }:
+            if role.name in {Role.Name.DEPARTMENT_HEAD, Role.Name.ADMIN, Role.Name.SUPER_ADMIN}:
                 return Response({"detail": "Department head cannot assign privileged role."}, status=403)
         target.role = role
         if role.name == Role.Name.TEAMLEAD:
@@ -730,10 +716,7 @@ class FrontendPromotionRequestsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not AccessPolicy.is_admin_like(request.user):
-            # Frontend polls this endpoint for multiple roles.
-            # Return empty collection instead of 403 to keep non-admin dashboards stable.
-            return Response([])
+        _ensure_admin_like(request.user)
         qs = PromotionRequest.objects.select_related("user", "requested_role", "reviewed_by").order_by("-created_at")
         status_value = (request.query_params.get("status") or "").strip().lower()
         if status_value in {PromotionRequest.Status.PENDING, PromotionRequest.Status.APPROVED, PromotionRequest.Status.REJECTED}:
@@ -1304,9 +1287,7 @@ class FrontendFeedbackTicketsAPIView(APIView):
         return bool(value)
 
     def get(self, request):
-        if not AccessPolicy.is_admin_like(request.user):
-            # Keep endpoint readable for non-admin roles that still request it.
-            return Response([])
+        _ensure_admin_like(request.user)
         qs = Feedback.objects.all().order_by("-created_at")
         return Response(
             [
@@ -1326,45 +1307,17 @@ class FrontendFeedbackTicketsAPIView(APIView):
         )
 
     def post(self, request):
-        if AccessPolicy.is_super_admin(request.user) or AccessPolicy.is_administrator(request.user):
-            return Response(
-                {"detail": "Superadmin/administrator should use feedback dashboard."},
-                status=403,
-            )
         text = (request.data.get("text") or "").strip()
         feedback_type = request.data.get("type") or "review"
         if not text:
             return Response({"text": ["This field is required."]}, status=400)
-        is_anonymous = self._to_bool(request.data.get("is_anonymous"), default=True)
-        full_name = None if is_anonymous else (f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username)
-        contact = None if is_anonymous else (request.user.email or request.user.phone or request.user.username)
         item = Feedback.objects.create(
             type=feedback_type,
             text=text,
-            is_anonymous=is_anonymous,
-            full_name=full_name,
-            contact=contact,
-            sender=request.user,
-            recipient="ADMIN",
+            is_anonymous=self._to_bool(request.data.get("is_anonymous"), default=True),
+            full_name=request.data.get("full_name"),
+            contact=request.data.get("contact"),
         )
-        recipients = list(_feedback_admin_recipients(exclude_user_id=request.user.id).values_list("id", flat=True))
-        if recipients:
-            Notification.objects.bulk_create(
-                [
-                    Notification(
-                        user_id=recipient_id,
-                        title="Новый отзыв",
-                        message=f"Поступил новый отзыв от {request.user.username}.",
-                        type=Notification.Type.INFO,
-                        code=NotificationCode.FEEDBACK_NEW,
-                        severity=Notification.Severity.INFO,
-                        entity_type=NotificationEntity.FEEDBACK,
-                        entity_id=str(item.id),
-                        action_url="/admin/feedback",
-                    )
-                    for recipient_id in recipients
-                ]
-            )
         return Response({"id": item.id, "status": item.status}, status=201)
 
 

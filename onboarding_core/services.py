@@ -20,10 +20,10 @@ def get_user_default_board(user) -> Board:
     return board
 
 
-def ensure_day_two_task_for_intern(*, user, day):
+def ensure_day_task_for_intern(*, user, day):
     if not (getattr(user, "role_id", None) and user.role.name == Role.Name.INTERN):
         return None
-    if day.day_number != 2:
+    if day.day_number not in {2, 3}:
         return None
     if not getattr(user, "subdivision_id", None):
         return None
@@ -39,9 +39,15 @@ def ensure_day_two_task_for_intern(*, user, day):
 
     today = timezone.localdate()
     due_date = today + timedelta(days=1)
-    title = subdivision.day_two_task_title.strip() or f"День 2: {subdivision.name}"
-    spec_url = (subdivision.day_two_spec_url or "").strip()
-    base_description = subdivision.day_two_task_description.strip()
+    if day.day_number == 2:
+        title = subdivision.day_two_task_title.strip() or f"День 2: {subdivision.name}"
+        spec_url = (subdivision.day_two_spec_url or "").strip()
+        base_description = subdivision.day_two_task_description.strip()
+    else:
+        title = subdivision.day_three_task_title.strip() or f"День 3: {subdivision.name}"
+        spec_url = (subdivision.day_three_spec_url or "").strip()
+        base_description = subdivision.day_three_task_description.strip()
+
     if spec_url:
         if base_description:
             base_description = f"{base_description}\n\nТЗ: {spec_url}"
@@ -77,3 +83,7 @@ def ensure_day_two_task_for_intern(*, user, day):
     if changed:
         task.save(update_fields=[*changed, "updated_at"])
     return task
+
+
+def ensure_day_two_task_for_intern(*, user, day):
+    return ensure_day_task_for_intern(user=user, day=day)

@@ -284,11 +284,12 @@ class EmployeeDailyReportAPIView(APIView):
         taken_tasks = (request.data.get("taken_tasks") or "").strip()
         completed_tasks = (request.data.get("completed_tasks") or "").strip()
         blockers = (request.data.get("blockers") or "").strip()
+        blocker_category = (request.data.get("blocker_category") or "").strip()
         summary = (request.data.get("summary") or "").strip()
         if not summary:
             summary = (
                 f"Начал: {started_tasks or '-'}\n"
-                f"Взял в работу: {taken_tasks or '-'}\n"
+                f"Отправил на обработку: {taken_tasks or '-'}\n"
                 f"Завершил: {completed_tasks or '-'}\n"
                 f"Проблемы/блокеры: {blockers or '-'}"
             )
@@ -302,6 +303,7 @@ class EmployeeDailyReportAPIView(APIView):
                 "taken_tasks": taken_tasks,
                 "completed_tasks": completed_tasks,
                 "blockers": blockers,
+                "blocker_category": blocker_category,
             },
         )
 

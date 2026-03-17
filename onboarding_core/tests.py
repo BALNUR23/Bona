@@ -237,8 +237,21 @@ class OnboardingDayDetailTests(TestCase):
             password="StrongPass123!",
             role=self.role,
         )
+        self.department = Department.objects.create(name="IT detail")
+        self.subdivision = DepartmentSubdivision.objects.create(
+            department=self.department,
+            name="Frontend",
+            day_three_task_title="Day 3 Front",
+            day_three_task_description="Build UI",
+            day_three_spec_url="https://example.com/front-day3",
+            is_active=True,
+        )
+        self.user.department = self.department
+        self.user.subdivision = self.subdivision
+        self.user.save(update_fields=["department", "subdivision"])
         self.day1 = OnboardingDay.objects.create(day_number=1, title="Day 1", is_active=True)
         self.day2 = OnboardingDay.objects.create(day_number=2, title="Day 2", is_active=True)
+        self.day3 = OnboardingDay.objects.create(day_number=3, title="Day 3", is_active=True)
         self.reg = Regulation.objects.create(
             title="Reg Day 1",
             type=Regulation.RegulationType.LINK,
@@ -268,3 +281,25 @@ class OnboardingDayDetailTests(TestCase):
     def test_day_two_detail_locked_until_day_one_completed(self):
         response = self.client.get(f"/api/v1/onboarding/days/{self.day2.id}/")
         self.assertEqual(response.status_code, 409)
+
+    def test_day_three_detail_creates_subdivision_task_with_spec(self):
+        OnboardingProgress.objects.create(
+            user=self.user,
+            day=self.day1,
+            status=OnboardingProgress.Status.DONE,
+            completed_at=timezone.now(),
+        )
+        OnboardingProgress.objects.create(
+            user=self.user,
+            day=self.day2,
+            status=OnboardingProgress.Status.DONE,
+            completed_at=timezone.now(),
+        )
+
+        response = self.client.get(f"/api/v1/onboarding/days/{self.day3.id}/")
+        self.assertEqual(response.status_code, 200)
+
+        task = Task.objects.get(assignee=self.user, onboarding_day=self.day3)
+        self.assertEqual(task.title, "Day 3 Front")
+        self.assertIn("Build UI", task.description)
+        self.assertIn("ТЗ: https://example.com/front-day3", task.description)

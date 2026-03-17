@@ -195,6 +195,9 @@ class DepartmentSubdivisionSerializer(serializers.ModelSerializer):
             "day_two_task_title",
             "day_two_task_description",
             "day_two_spec_url",
+            "day_three_task_title",
+            "day_three_task_description",
+            "day_three_spec_url",
             "is_active",
             "users_count",
         )

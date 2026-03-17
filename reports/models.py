@@ -2,6 +2,7 @@ import uuid
 
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.utils import timezone
 
 from accounts.models import User
 from onboarding_core.models import OnboardingDay
@@ -182,6 +183,13 @@ class ReportNotification(models.Model):
 
 
 class EmployeeDailyReport(models.Model):
+    class BlockerCategory(models.TextChoices):
+        TECH_FAILURE = "tech_failure", "Тех. сбой"
+        INFO = "info", "Инфо"
+        COLLEAGUES = "colleagues", "Коллеги"
+        PROCESS = "process", "Процесс"
+        OTHER = "other", "Другое"
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -193,8 +201,34 @@ class EmployeeDailyReport(models.Model):
     taken_tasks = models.TextField(blank=True, default="")
     completed_tasks = models.TextField(blank=True, default="")
     blockers = models.TextField(blank=True, default="")
+    blocker_category = models.CharField(
+        max_length=32,
+        choices=BlockerCategory.choices,
+        blank=True,
+        default="",
+    )
+    is_late = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        created_at = self.created_at
+        if self._state.adding or created_at is None:
+            created_at = timezone.now()
+        if timezone.is_naive(created_at):
+            created_at = timezone.make_aware(created_at, timezone.get_current_timezone())
+
+        created_at_local = timezone.localtime(created_at)
+        cutoff = created_at_local.replace(hour=10, minute=0, second=0, microsecond=0)
+        self.is_late = created_at_local > cutoff
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.add("is_late")
+            kwargs["update_fields"] = list(update_fields)
+
+        super().save(*args, **kwargs)
 
     class Meta:
         unique_together = ("user", "report_date")

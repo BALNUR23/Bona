@@ -26,7 +26,7 @@ from reports.models import OnboardingReport
 
 from .models import OnboardingDay, OnboardingMaterial, OnboardingProgress
 from .audit import OnboardingAuditService
-from .services import ensure_day_two_task_for_intern
+from .services import ensure_day_task_for_intern
 from .serializers import (
     AdminOnboardingDaySerializer,
     AdminOnboardingMaterialSerializer,
@@ -166,7 +166,7 @@ class OnboardingDayDetailView(RetrieveAPIView):
                 status=drf_status.HTTP_409_CONFLICT,
             )
         _ensure_day_one_onboarding_task_for_intern(user=request.user, day=day)
-        ensure_day_two_task_for_intern(user=request.user, day=day)
+        ensure_day_task_for_intern(user=request.user, day=day)
         serializer = self.get_serializer(day)
         return Response(serializer.data)
 

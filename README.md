@@ -1,349 +1,218 @@
-﻿# onboarding-backend / V Plus HRM
+﻿# Onboarding Backend
 
-Корпоративная HRM/onboarding платформа **"В Плюсе"**.
+Django REST backend для HRM/onboarding-платформы (роли, онбординг, регламенты, контент, отчеты, графики, attendance, задачи, payroll, BPM, KB и метрики).
 
-Проект состоит из backend (Django + DRF) и frontend (Vite/React в отдельной папке/репозитории). Платформа покрывает onboarding, сотрудников, оргструктуру, посещаемость, графики, регламенты, зарплаты, контент и обратную связь.
+## Что внутри
+- `Python + Django 4.2`
+- `Django REST Framework`
+- `JWT` через `djangorestframework-simplejwt`
+- `PostgreSQL`
+- `drf-spectacular` (OpenAPI/Swagger)
+- `django-unfold` (админка, если пакет установлен)
 
----
+## Структура backend
+- `config/` - настройки, роутинг, healthcheck, SPA/compat endpoints
+- `accounts/` - пользователи, роли, орг-структура, авторизация, reset пароля
+- `onboarding_core/` - дни онбординга, материалы, прогресс
+- `regulations/` - регламенты, подтверждение/квизы, intern flow
+- `reports/` - ежедневные и onboarding-отчеты
+- `content/` - новости, welcome, инструкции, feedback, курсы
+- `work_schedule/` - графики, календари, weekly plans
+- `apps/attendance/` - attendance-отметки, check-in по гео/IP, рабочий календарь
+- `apps/tasks/` - командные/личные задачи
+- `apps/payroll/` - зарплатные периоды и профили
+- `apps/kb/` - база знаний
+- `apps/metrics/` - персональные/командные метрики
+- `apps/bpm/` - BPM-процессы и шаги
+- `apps/audit/`, `security/`, `common/` - аудит, системные логи, уведомления
 
-## 1. Что делает проект
-
-Система автоматизирует внутренние HR-процессы компании:
-
-- управление пользователями, ролями, отделами и должностями;
-- onboarding стажеров и сотрудников;
-- регламенты и контроль ознакомления;
-- посещаемость (check-in/check-out, статусы дня);
-- рабочие графики;
-- payroll (расчет зарплаты по модели оплаты);
-- новости, инструкции и внутренний контент;
-- заявки/тикеты и обратная связь;
-- страницы админ/суперадмин функционала и совместимость с legacy frontend API.
-
----
-
-## 2. Технологический стек
-
-### Backend
-- Python 3.9+
-- Django 4.2.x
-- Django REST Framework
-- PostgreSQL
-- JWT (`rest_framework_simplejwt`)
-- CORS (`django-cors-headers`)
-
-### Frontend
-- React + Vite
-- Axios
-- Локализация RU/EN/KG (частично/поэтапно)
-
----
-
-## 3. Структура backend (ключевые приложения)
-
-- `accounts/` — пользователи, роли, отделы, должности, оргструктура
-- `onboarding_core/` — onboarding сценарии и отчеты
-- `regulations/` — регламенты, подтверждение ознакомления, тестовые проверки
-- `apps/attendance/` — посещаемость
-- `apps/payroll/` — расчет зарплаты и ставки
-- `content/` — новости и инструкции
-- `feedback/` — тикеты/обратная связь
-- `config/` — settings, urls, compat views/urls
-
-Дополнительно:
-- `config/frontend_compat_urls.py` и `config/frontend_compat_views.py` — слой совместимости со старым фронтом.
-
----
-
-## 3.1 Подробная структура проекта и ответственность модулей
-
-### Корень проекта (`onboarding-backend/`)
-- `manage.py` — точка входа Django-команд.
-- `requirements.txt` — зависимости backend.
-- `.env` — окружение (секреты, БД, CORS, debug-параметры).
-- `README.md` — документация проекта.
-
-### Конфигурация (`config/`)
-- `settings.py` — глобальные настройки Django/DRF.
-- `urls.py` — главный роутинг API и страниц.
-- `frontend_compat_urls.py` / `frontend_compat_views.py` — совместимость со старым frontend-контрактом.
-- `spa_views.py` — отдача SPA/шаблонов в web-режиме.
-
-### Домен пользователей и оргструктуры (`accounts/`)
-- Пользователи, роли, отделы, должности.
-- Иерархия компании и данные для страниц "Компания" / "Пользователи".
-- Авторизация/профиль и доступы по ролям.
-
-### Онбординг (`onboarding_core/`)
-- Программы onboarding по дням/этапам.
-- Задачи, отчеты, статусы прохождения.
-- Логика для стажеров и кураторов.
-
-### Регламенты (`regulations/`)
-- Хранение регламентов (файлы/ссылки/описания).
-- Подтверждение ознакомления.
-- Проверка знаний/мини-тесты (в зависимости от текущей версии схемы).
-
-### Посещаемость (`apps/attendance/`)
-- Check-in/check-out.
-- Дневные статусы (в офисе, не отмечен и т.д.).
-- История посещаемости по сотрудникам/месяцу.
-
-### Зарплаты (`apps/payroll/`)
-- Модели оплаты (оклад/почасовая/поминутная).
-- Ставки сотрудников.
-- Пересчет и выдача итоговых payroll-данных.
-
-### Контент (`content/`)
-- Новости, инструкции и информационные блоки.
-- Данные для дашбордов и внутренних страниц.
-
-### Обратная связь (`feedback/`)
-- Тикеты/обращения сотрудников.
-- Статусы обработки и ответы.
-
-### Отчеты (`reports/`)
-- Агрегированные отчеты для управленческих страниц.
-
-### Статические и медиа файлы
-- `static/` — статические ресурсы backend.
-- `media/` — загруженные файлы (регламенты, вложения и пр.).
-- `templates/` — серверные HTML-шаблоны (если используются).
-
-### Frontend-папки (локально)
-- `vpluse_front_clean` / `vpluse_front-main` / `vpluse_front` — React/Vite frontend (в зависимости от вашей рабочей копии).
-- Ответственность frontend:
-  - рендер интерфейса;
-  - отправка запросов в backend API;
-  - локализация (RU/EN/KG);
-  - валидация формы на уровне UI.
-
-### Граница ответственности backend vs frontend
-- Backend — источник истины для бизнес-логики, прав и расчетов.
-- Frontend — отображение, UX, фильтрация/поиск на клиенте, отправка корректных payload.
-- Любые итоговые значения (зарплата, статусы, доступы) должны финально определяться backend.
-
----
-
-## 4. Роли и доступы (базовая модель)
-
-Актуальные бизнес-роли зависят от состояния ветки, но обычно используются:
-
-- `superadmin`
-- `administrator`
-- `admin`
-- `projectmanager` / `teamlead`
-- `employee`
-- `intern`
-
-Принцип доступа:
-- `superadmin/administrator` — расширенное управление (пользователи, оргструктура, ставки и пр.);
-- менеджерские роли — управление в рамках команды/подчиненных;
-- `employee/intern` — пользовательские разделы (профиль, задачи, расписание и т.д.).
-
----
-
-## 5. API (основные префиксы)
-
-- `/api/v1/accounts/`
-- `/api/v1/onboarding/`
-- `/api/v1/regulations/` или `/api/v1/content/regulations/` (в зависимости от маршрута)
-- `/api/v1/attendance/`
-- `/api/v1/payroll/`
-- `/api/v1/content/`
-- `/api/v1/feedback/`
-
-Legacy/compat маршруты могут дублироваться в `config/frontend_compat_urls.py`.
-
----
-
-## 6. Быстрый запуск backend (локально)
-
-1. Клонировать и перейти в каталог:
-
+## Быстрый старт (локально)
+1. Перейти в backend:
 ```bash
-git clone <repo_url>
 cd onboarding-backend
 ```
 
-2. Создать и активировать виртуальное окружение:
-
+2. Создать и активировать venv:
 ```bash
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+# Linux/macOS
+source .venv/bin/activate
 ```
 
 3. Установить зависимости:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Настроить `.env` на базе `.env.example`.
+4. Подготовить `.env` в корне `onboarding-backend/`.
 
 5. Применить миграции:
-
 ```bash
 python manage.py migrate
 ```
 
-6. Запустить backend:
+6. Инициализировать роли/права (обязательно для RBAC):
+```bash
+python manage.py init_rbac
+```
 
+7. (Опционально) создать суперпользователя:
+```bash
+python manage.py createsuperuser
+```
+
+8. Запустить сервер:
 ```bash
 python manage.py runserver
 ```
 
-Backend: `http://127.0.0.1:8000`
-
----
-
-## 7. Запуск frontend (локально)
-
-В вашем окружении использовались несколько фронтов. Выберите **один** рабочий каталог (пример):
-
-- `C:\Users\User\vpluse_front_clean`
-- или `C:\Users\User\vpluse_front-main`
-- или `C:\Users\User\onboarding-backend\vpluse_front`
-
-Далее:
-
-```bash
-npm install
-npm run dev
-```
-
-Если порт `5173` занят, Vite автоматически поднимет `5174`.
-
-### Важно для связи с backend
-В `.env` фронта:
-
+## Пример `.env`
 ```env
-VITE_API_URL=http://localhost:8000/api
+SECRET_KEY=change-me
+DEBUG=true
+ALLOWED_HOSTS=127.0.0.1,localhost
+
+DB_NAME=onboarding
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_HOST=127.0.0.1
+DB_PORT=5432
+# либо одной строкой:
+# DATABASE_URL=postgres://user:password@host:5432/dbname
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CSRF_TRUSTED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+AUDIT_PRIMARY_BACKEND=accounts
+AUDIT_LEGACY_BACKEND=security
+AUDIT_WRITE_MODE=primary_only
+
+OFFICE_GEOFENCE_LATITUDE=42.8746
+OFFICE_GEOFENCE_LONGITUDE=74.5698
+OFFICE_GEOFENCE_RADIUS_M=150
+OFFICE_IP_NETWORKS=127.0.0.1/32,192.168.1.0/24,192.168.10.0/24,10.0.0.0/16
 ```
 
-Тогда frontend будет обращаться к backend по маршрутам вида:
-`http://localhost:8000/api/v1/...`
+## Основные URL
+- Health: `GET /health/`
+- Swagger UI: `GET /api/docs/`
+- OpenAPI schema: `GET /api/schema/`
+- JWT login: `POST /api/v1/auth/login/`
+- JWT refresh: `POST /api/v1/auth/refresh/`
+- Админ-вход: `/admin/login/`
+- Django admin (технический): `/admin/panel/`
 
----
+## API-модули (корневые префиксы)
+- `/api/v1/accounts/` - профиль, орг-структура, reference-справочники, reset пароля
+- `/api/v1/onboarding/` - дни/прогресс онбординга
+- `/api/v1/regulations/` - регламенты, интерн-поток, подтверждения
+- `/api/v1/reports/` - отчеты и review
+- `/api/v1/content/` - новости, инструкции, feedback, курсы
+- `/api/v1/common/` - уведомления
+- `/api/v1/security/` - системные логи
+- `/api/v1/attendance/` - attendance/check-in/календарь
+- `/api/v1/tasks/` - задачи
+- `/api/v1/payroll/` - payroll
+- `/api/v1/kb/` - база знаний
+- `/api/v1/metrics/` - метрики
+- `/api/v1/bpm/` - BPM
+- `/api/v1/work-schedules/...` и legacy schedule endpoints идут через `work_schedule.urls` под `/api/`
+- Доп. compat endpoints для фронта - через `/api/` (`config/frontend_compat_urls.py`)
 
-## 8. Payroll: источник истины
+## Полезные management-команды
+- `python manage.py init_rbac` - создать/обновить системные роли и права
+- `python manage.py normalize_roles --dry-run` - проверить лишние роли без записи
+- `python manage.py normalize_roles` - нормализовать роли и удалить лишние
+- `python manage.py seed_demo_employee` - демо-пользователи + тестовые данные
+- `python manage.py prepare_e2e` - очистить и нормализовать состояние БД для e2e
+- `python manage.py generate_work_calendar_month --year 2026 --month 3` - сгенерировать рабочий календарь
+- `python manage.py check_weekly_plan_deadlines` - проверка дедлайна weekly plan (понедельник 12:00)
+- `python manage.py check_audit_writes` - проверка на прямые записи в аудит
 
-Логика расчета зарплаты должна быть на backend:
-
-- `fixed`: `accrual = fixed_salary`
-- `hourly`: `accrual = worked_hours * hourly_rate`
-- `minute`: `accrual = worked_minutes * minute_rate`
-
-Итог:
-`total_salary = accrual + bonus - penalty (+ adjustments)`
-
-Frontend не должен пересчитывать зарплату вручную — только отправлять настройки и отображать готовые поля API.
-
-Рабочий поток:
-1. `POST /api/v1/payroll/admin/hourly-rates/`
-2. `POST /api/v1/payroll/admin/recalculate/`
-3. `GET /api/v1/payroll/admin/?year=...&month=...`
-4. `GET /api/v1/payroll/admin/summary/?year=...&month=...`
-
----
-
-## 9. Полезные команды backend
-
-```bash
-python manage.py check
-python manage.py makemigrations
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py showmigrations
-```
-
-Планировщик дедлайнов:
-
+## Планировщик weekly-plan дедлайна
+Команду ниже рекомендуется запускать каждый понедельник в `12:01` (локальное серверное время):
 ```bash
 python manage.py check_weekly_plan_deadlines
 ```
 
----
-
-## 10. Частые проблемы и решения
-
-### 10.1 Conflicting migrations / multiple leaf nodes
-
-```bash
-python manage.py makemigrations --merge
-python manage.py migrate
+Пример cron (Linux):
+```cron
+1 12 * * 1 cd /path/to/onboarding-backend && /path/to/python manage.py check_weekly_plan_deadlines
 ```
 
-### 10.2 401 Unauthorized / бесконечные refresh попытки
-- проверить access/refresh токены в `localStorage`;
-- выйти/войти заново;
-- убедиться, что frontend смотрит на правильный backend URL.
+Пример Windows Task Scheduler:
+- Trigger: Weekly, Monday, `12:01`
+- Program/script: путь к `python.exe`
+- Arguments: `manage.py check_weekly_plan_deadlines`
+- Start in: `C:\path\to\onboarding-backend`
 
-### 10.3 429 Too Many Requests
-Причина: частый polling + много вкладок.
-
-Решение:
-- уменьшить polling во frontend;
-- закрыть лишние вкладки;
-- в DEBUG временно ослабить throttle.
-
-### 10.4 404 на compat endpoint
-Проверить, что маршрут добавлен в `config/frontend_compat_urls.py`.
-
-### 10.5 ImportError по моделям после merge
-Пример: `RegulationKnowledgeCheck` / `RegulationQuiz`.
-
-Решение:
-- привести код и импорты к одной версии схемы;
-- проверить `admin.py`, `serializers.py`, `views.py`;
-- затем `makemigrations` + `migrate`.
-
-### 10.6 Frontend не показывает последние изменения
-Проверить:
-- открыт ли правильный frontend-проект;
-- правильный порт (`5173/5174`);
-- `Ctrl+F5`;
-- API URL в `.env`;
-- что backend запущен именно из текущей ветки.
-
----
-
-## 11. Рекомендованный git-flow
-
-1. Перед работой:
-
+## Тесты
 ```bash
-git checkout <your-branch>
-git pull --rebase
+pytest
 ```
 
-2. После изменений:
-
+Точечные примеры:
 ```bash
-git add .
-git commit -m "<clear message>"
-git push origin <your-branch>
+pytest work_schedule/tests/test_weekly_work_plan_api.py
+pytest apps/payroll/tests/test_api.py
 ```
 
-3. Перед merge чужой ветки:
-- убедиться, что рабочее дерево чистое;
-- при конфликтах фиксировать единую схему моделей/миграций.
+## Продакшен заметки
+- WSGI entrypoint: `config.wsgi:application`
+- `Procfile`: `web: gunicorn config.wsgi:application`
+- Для статики используется `whitenoise` (если установлен)
+- В production рекомендуется `DEBUG=false`, корректный `ALLOWED_HOSTS`, HTTPS и валидные `CSRF_TRUSTED_ORIGINS`
 
----
+## Deploy в Google Cloud Run
+В репозитории есть готовые файлы для Cloud Run:
+- `Dockerfile`
+- `.dockerignore`
+- `start-cloudrun.sh`
+- `.env.cloudrun.example`
 
-## 12. Минимальный checklist перед демо
+Что нужно перед деплоем:
+1. Подготовить PostgreSQL с внешним доступом или Cloud SQL и получить `DATABASE_URL`.
+2. Подготовить `SECRET_KEY`.
+3. Определить frontend-домен и прописать его в `CORS_ALLOWED_ORIGINS` и `CSRF_TRUSTED_ORIGINS`.
 
-- backend поднят без traceback;
-- все миграции применены;
-- login работает (`/api/v1/accounts/login/` или compat `/api/auth/login/`);
-- ключевые страницы открываются без 401/403/404/500;
-- payroll/attendance/regulations получают валидные ответы;
-- frontend запущен из правильной папки и смотрит в нужный API.
+Пример деплоя через `gcloud`:
+```bash
+gcloud config set project project-88d05a80-3e89-49ce-87c
 
----
+gcloud run deploy onboarding-backend \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars DEBUG=false \
+  --set-env-vars SECRET_KEY=replace-me \
+  --set-env-vars ALLOWED_HOSTS=* \
+  --set-env-vars DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DBNAME \
+  --set-env-vars CORS_ALLOWED_ORIGINS=https://your-frontend-domain.com \
+  --set-env-vars CSRF_TRUSTED_ORIGINS=https://your-frontend-domain.com
+```
 
-## 13. Статус документа
+Cloud Run при старте контейнера автоматически выполнит:
+```bash
+python manage.py collectstatic --noinput
+python manage.py migrate --noinput
+gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+```
 
-README поддерживается как рабочая инструкция для команды разработки.
+После первого деплоя при необходимости отдельно выполните инициализацию ролей:
+```bash
+python manage.py init_rbac
+```
+Эту команду удобнее запускать один раз через Cloud Run Job или локально против production-базы.
 
-Если меняются API-контракты или роли — обновляйте этот файл вместе с кодом.
+## Роли в системе
+Базовые роли:
+- `SUPER_ADMIN`
+- `ADMIN`
+- `DEPARTMENT_HEAD`
+- `TEAMLEAD`
+- `EMPLOYEE`
+- `INTERN`
+
+Роли и права инициализируются командой `init_rbac`.

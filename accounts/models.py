@@ -116,6 +116,9 @@ class DepartmentSubdivision(models.Model):
     day_two_task_title = models.CharField("Заголовок задачи 2-го дня", max_length=255, blank=True)
     day_two_task_description = models.TextField("Описание задачи 2-го дня", blank=True)
     day_two_spec_url = models.URLField("Ссылка на ТЗ/документ", blank=True)
+    day_three_task_title = models.CharField("Заголовок задачи 3-го дня", max_length=255, blank=True)
+    day_three_task_description = models.TextField("Описание задачи 3-го дня", blank=True)
+    day_three_spec_url = models.URLField("Ссылка на ТЗ/документ для 3-го дня", blank=True)
     is_active = models.BooleanField("Активен", default=True)
 
     class Meta:

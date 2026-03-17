@@ -10,7 +10,6 @@ from .admin_views import (
     attendance_checkin_page,
     content_dashboard,
     onboarding_dashboard,
-    unified_admin_login,
     work_schedule_board_page,
 )
 from .health import health_check
@@ -24,17 +23,18 @@ urlpatterns = [
     path("health/", health_check, name="health"),
     path("ckeditor5/", include("django_ckeditor_5.urls")),
 
-    # Unified web login: all roles enter only via /admin
+    # Unified web login: use frontend login page.
+    path("login/", spa_index, name="spa-login"),
     path("admin/login/portal/", spa_portal, name="admin-login-portal"),
-    path("admin/login/", unified_admin_login, name="admin-login"),
-    path("admin/", unified_admin_login, name="admin-root"),
+    path("admin/login/", RedirectView.as_view(url="/login/", permanent=False), name="admin-login"),
+    path("admin/", RedirectView.as_view(url="/login/", permanent=False), name="admin-root"),
 
     # Keep Django admin available on a separate technical path.
     path("admin/panel/onboarding/", onboarding_dashboard, name="admin-onboarding-dashboard"),
     path("admin/panel/content/", content_dashboard, name="admin-content-dashboard"),
     path("admin/panel/attendance/check-in/", attendance_checkin_page, name="admin-attendance-checkin-page"),
     path("admin/panel/work-schedule-board/", work_schedule_board_page, name="admin-work-schedule-board"),
-    path("admin/panel/login/", RedirectView.as_view(url="/admin/login/", permanent=False), name="admin-panel-login-redirect"),
+    path("admin/panel/login/", RedirectView.as_view(url="/login/", permanent=False), name="admin-panel-login-redirect"),
     path("admin/panel/", admin.site.urls),
     re_path(r"^admin/(?!login(?:/|$)|panel(?:/|$)).*$", spa_portal, name="spa-admin-catch-all"),
 

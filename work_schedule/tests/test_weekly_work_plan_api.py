@@ -79,7 +79,8 @@ class WeeklyWorkPlanApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("online_reason", response.data)
+        self.assertIn("errors", response.data)
+        self.assertIn("online_reason", response.data["errors"])
 
     def test_office_hours_below_24_requires_reason(self):
         self.client.force_authenticate(self.employee)
@@ -100,7 +101,8 @@ class WeeklyWorkPlanApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("online_reason", response.data)
+        self.assertIn("errors", response.data)
+        self.assertIn("online_reason", response.data["errors"])
 
     def test_admin_can_request_clarification_then_approve(self):
         plan = WeeklyWorkPlan.objects.create(
@@ -155,7 +157,8 @@ class WeeklyWorkPlanApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("days", response.data)
+        self.assertIn("errors", response.data)
+        self.assertIn("days", response.data["errors"])
 
     def test_day_off_mode_without_hours_is_allowed(self):
         self.client.force_authenticate(self.employee)

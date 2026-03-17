@@ -1,10 +1,12 @@
+from datetime import date, datetime
 from django.test import TestCase
+from django.utils import timezone
 from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from accounts.models import Permission, Role, User
 from onboarding_core.models import OnboardingDay, OnboardingProgress
-from .models import OnboardingReport
+from .models import EmployeeDailyReport, OnboardingReport
 
 
 class OnboardingReportTests(TestCase):
@@ -237,3 +239,16 @@ class EmployeeDailyReportApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["summary"], "Done tasks")
+
+    @patch("reports.models.timezone.now")
+    def test_daily_report_marks_late_after_10(self, mocked_now):
+        mocked_now.return_value = timezone.make_aware(
+            datetime(2026, 2, 20, 10, 1, 0),
+            timezone.get_current_timezone(),
+        )
+        report = EmployeeDailyReport.objects.create(
+            user=self.employee,
+            report_date=date(2026, 2, 20),
+            summary="Late report",
+        )
+        self.assertTrue(report.is_late)
