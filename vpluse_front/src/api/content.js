@@ -75,9 +75,23 @@ export const auditAPI = {
 export const tasksAPI = {
   my: () => api.get('/v1/tasks/my/'),
   team: () => api.get('/v1/tasks/team/'),
+  projects: () => api.get('/v1/tasks/projects/'),
+  createProject: (data) => api.post('/v1/tasks/projects/', data),
+  updateProject: (id, data) => api.patch(`/v1/tasks/projects/${id}/`, data),
+  projectTasks: (id, params) => api.get(`/v1/tasks/projects/${id}/tasks/`, { params }),
+  assignees: () => api.get('/v1/tasks/assignees/'),
   create: (data) => api.post('/v1/tasks/create/', data),
   detail: (id) => api.get(`/v1/tasks/${id}/`),
   update: (id, data) => api.patch(`/v1/tasks/${id}/`, data),
+  comments: (id) => api.get(`/v1/tasks/${id}/comments/`),
+  addComment: (id, data) => api.post(`/v1/tasks/${id}/comments/`, data),
+  updateComment: (taskId, commentId, data) => api.patch(`/v1/tasks/${taskId}/comments/${commentId}/`, data),
+  deleteComment: (taskId, commentId) => api.delete(`/v1/tasks/${taskId}/comments/${commentId}/`),
+  history: (id) => api.get(`/v1/tasks/${id}/history/`),
+  subtasks: (id) => api.get(`/v1/tasks/${id}/subtasks/`),
+  addSubtask: (id, data) => api.post(`/v1/tasks/${id}/subtasks/`, data),
+  updateSubtask: (taskId, subtaskId, data) => api.patch(`/v1/tasks/${taskId}/subtasks/${subtaskId}/`, data),
+  deleteSubtask: (taskId, subtaskId) => api.delete(`/v1/tasks/${taskId}/subtasks/${subtaskId}/`),
   move: (id, column_id) => api.patch(`/v1/tasks/${id}/move/`, { column_id }),
   dailyReports: (params) => api.get('/v1/reports/employee/daily/', { params }),
   submitDailyReport: (data) => api.post('/v1/reports/employee/daily/', data),
@@ -96,5 +110,3 @@ export const payrollAPI = {
   createSalaryProfile: (data) => api.post('/v1/payroll/admin/salary-profiles/', data),
   updateSalaryProfile: (id, data) => api.patch(`/v1/payroll/admin/salary-profiles/${id}/`, data),
 };
-
-

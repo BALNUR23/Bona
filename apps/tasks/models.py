@@ -6,6 +6,7 @@ from accounts.models import Department
 
 class Board(models.Model):
     name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default="")
     department = models.ForeignKey(
         Department,
         on_delete=models.SET_NULL,
@@ -18,6 +19,11 @@ class Board(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="created_boards",
+    )
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="task_boards",
     )
 
     class Meta:
@@ -48,6 +54,14 @@ class Task(models.Model):
         LOW = "low", "Low"
         MEDIUM = "medium", "Medium"
         HIGH = "high", "High"
+        CRITICAL = "critical", "Critical"
+
+    class Status(models.TextChoices):
+        TO_DO = "to_do", "To Do"
+        IN_PROGRESS = "in_progress", "In Progress"
+        REVIEW = "review", "Review"
+        DONE = "done", "Done"
+        BLOCKED = "blocked", "Blocked"
 
     board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name="tasks")
     column = models.ForeignKey(Column, on_delete=models.PROTECT, related_name="tasks")
@@ -55,7 +69,9 @@ class Task(models.Model):
     description = models.TextField(blank=True)
     assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="assigned_tasks",
     )
     reporter = models.ForeignKey(
@@ -63,6 +79,7 @@ class Task(models.Model):
         on_delete=models.PROTECT,
         related_name="reported_tasks",
     )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.TO_DO)
     due_date = models.DateField(null=True, blank=True)
     priority = models.CharField(max_length=20, choices=Priority.choices, default=Priority.MEDIUM)
     onboarding_day = models.ForeignKey(
@@ -97,12 +114,32 @@ class TaskComment(models.Model):
     )
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["created_at", "id"]
 
     def __str__(self):
         return f"{self.task_id}:{self.author_id}"
+
+
+class SubTask(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="subtasks")
+    title = models.CharField(max_length=255)
+    is_completed = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="created_subtasks",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.task_id}:{self.title}"
 
 
 class TaskAttachment(models.Model):
@@ -120,4 +157,3 @@ class TaskAttachment(models.Model):
 
     def __str__(self):
         return f"{self.task_id}:{self.id}"
-

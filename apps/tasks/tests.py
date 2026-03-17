@@ -5,10 +5,10 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import Role, User
+from accounts.models import Department, Role, User
 from work_schedule.models import WeeklyWorkPlan
 
-from .models import Column, Task
+from .models import Board, Column, Task
 from .views import MANDATORY_WEEKLY_PLAN_TASK_TITLE
 
 
@@ -27,17 +27,20 @@ class TasksApiTests(TestCase):
             name=Role.Name.ADMIN,
             defaults={"level": Role.Level.ADMIN},
         )
+        self.department = Department.objects.create(name="Backend")
 
         self.lead = User.objects.create_user(
             username="lead_task",
             password="StrongPass123!",
             role=self.teamlead_role,
+            department=self.department,
         )
         self.subordinate = User.objects.create_user(
             username="sub_task",
             password="StrongPass123!",
             role=self.employee_role,
             manager=self.lead,
+            department=self.department,
         )
         self.outsider = User.objects.create_user(
             username="out_task",
@@ -48,6 +51,7 @@ class TasksApiTests(TestCase):
             username="admin_task",
             password="StrongPass123!",
             role=self.admin_role,
+            department=self.department,
         )
 
     @patch("apps.tasks.views.TasksAuditService.log_task_created")
@@ -192,6 +196,10 @@ class TasksApiTests(TestCase):
         board = self._create_default_board(user)
         return board.columns.order_by("order").first()
 
+    def _create_columns_for_board(self, board):
+        for order, name in enumerate(("To Do", "In Progress", "Review", "Done", "Blocked"), start=1):
+            Column.objects.create(board=board, name=name, order=order)
+
     def _next_monday(self):
         today = timezone.localdate()
         days_ahead = (7 - today.weekday()) % 7
@@ -254,3 +262,161 @@ class TasksApiTests(TestCase):
         returned_ids = [item["id"] for item in response.data]
         self.assertEqual(returned_ids, [self.subordinate.id])
 
+    def test_teamlead_can_create_project_with_own_team_members(self):
+        self.client.force_authenticate(user=self.lead)
+        response = self.client.post(
+            "/api/v1/tasks/projects/",
+            {
+                "name": "CRM rollout",
+                "description": "New customer flows",
+                "member_ids": [self.subordinate.id],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        board = Board.objects.get(name="CRM rollout")
+        self.assertFalse(board.is_personal)
+        self.assertEqual(board.created_by, self.lead)
+        self.assertEqual(set(board.members.values_list("id", flat=True)), {self.lead.id, self.subordinate.id})
+        self.assertEqual(board.columns.count(), 5)
+
+    def test_teamlead_cannot_create_project_with_outside_member(self):
+        self.client.force_authenticate(user=self.lead)
+        response = self.client.post(
+            "/api/v1/tasks/projects/",
+            {
+                "name": "Forbidden project",
+                "member_ids": [self.outsider.id],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Board.objects.filter(name="Forbidden project").exists())
+
+    @patch("apps.tasks.views.TasksAuditService.log_task_created")
+    def test_teamlead_can_create_task_inside_project_board(self, log_task_created):
+        board = Board.objects.create(
+            name="Mobile app",
+            is_personal=False,
+            created_by=self.lead,
+            department=self.department,
+        )
+        board.members.set([self.lead, self.subordinate])
+        self._create_columns_for_board(board)
+
+        self.client.force_authenticate(user=self.lead)
+        response = self.client.post(
+            "/api/v1/tasks/create/",
+            {
+                "board_id": board.id,
+                "title": "Implement API",
+                "assignee_id": self.subordinate.id,
+                "priority": "high",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        task = Task.objects.get(title="Implement API")
+        self.assertEqual(task.board_id, board.id)
+        self.assertEqual(task.assignee, self.subordinate)
+        log_task_created.assert_called_once()
+
+    def test_project_tasks_endpoint_returns_only_selected_project_tasks(self):
+        board = Board.objects.create(
+            name="Internal tools",
+            is_personal=False,
+            created_by=self.lead,
+            department=self.department,
+        )
+        board.members.set([self.lead, self.subordinate])
+        self._create_columns_for_board(board)
+
+        other_board = Board.objects.create(
+            name="Other board",
+            is_personal=False,
+            created_by=self.lead,
+            department=self.department,
+        )
+        other_board.members.set([self.lead, self.subordinate])
+        self._create_columns_for_board(other_board)
+
+        Task.objects.create(
+            board=board,
+            column=board.columns.order_by("order").first(),
+            title="Project task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+        )
+        Task.objects.create(
+            board=other_board,
+            column=other_board.columns.order_by("order").first(),
+            title="Other task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+        )
+
+        self.client.force_authenticate(user=self.subordinate)
+        response = self.client.get(f"/api/v1/tasks/projects/{board.id}/tasks/")
+        self.assertEqual(response.status_code, 200)
+        titles = {item["title"] for item in response.data}
+        self.assertEqual(titles, {"Project task"})
+
+    def test_filter_tasks_by_priority_and_status(self):
+        board = self._create_default_board(self.subordinate)
+        todo_column = board.columns.get(order=1)
+        done_column = board.columns.get(order=4)
+        Task.objects.create(
+            board=board,
+            column=todo_column,
+            title="Critical task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            priority=Task.Priority.CRITICAL,
+            status=Task.Status.TO_DO,
+        )
+        Task.objects.create(
+            board=board,
+            column=done_column,
+            title="Done task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            priority=Task.Priority.LOW,
+            status=Task.Status.DONE,
+        )
+        self.client.force_authenticate(user=self.subordinate)
+        response = self.client.get("/api/v1/tasks/my/?priority=critical&status=to_do")
+        self.assertEqual(response.status_code, 200)
+        titles = [item["title"] for item in response.data]
+        self.assertEqual(titles, ["Critical task"])
+
+    def test_create_and_complete_subtasks(self):
+        board = self._create_default_board(self.subordinate)
+        task = Task.objects.create(
+            board=board,
+            column=board.columns.get(order=1),
+            title="Parent task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            status=Task.Status.TO_DO,
+        )
+        self.client.force_authenticate(user=self.lead)
+        create_response = self.client.post(
+            f"/api/v1/tasks/{task.id}/subtasks/",
+            {"title": "Write tests"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        subtask_id = create_response.data["id"]
+
+        update_response = self.client.patch(
+            f"/api/v1/tasks/{task.id}/subtasks/{subtask_id}/",
+            {"is_completed": True},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        detail_response = self.client.get(f"/api/v1/tasks/{task.id}/")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["subtasks_total"], 1)
+        self.assertEqual(detail_response.data["subtasks_completed"], 1)
+        self.assertTrue(detail_response.data["can_complete_parent"])

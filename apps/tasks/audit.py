@@ -64,3 +64,70 @@ class TasksAuditService:
             },
         )
 
+    @classmethod
+    def log_task_comment_added(cls, request, task, comment) -> None:
+        log_event(
+            action=AuditEvents.TASK_UPDATED,
+            actor=request.user,
+            object_type="task",
+            object_id=str(task.id),
+            level="info",
+            category="content",
+            ip_address=cls._ip(request),
+            metadata={
+                "actor_id": request.user.id,
+                "comment_id": comment.id,
+                "changed_fields": ["comment_added"],
+            },
+        )
+
+    @classmethod
+    def log_task_comment_updated(cls, request, task, comment) -> None:
+        log_event(
+            action=AuditEvents.TASK_UPDATED,
+            actor=request.user,
+            object_type="task",
+            object_id=str(task.id),
+            level="info",
+            category="content",
+            ip_address=cls._ip(request),
+            metadata={
+                "actor_id": request.user.id,
+                "comment_id": comment.id,
+                "changed_fields": ["comment_updated"],
+            },
+        )
+
+    @classmethod
+    def log_task_comment_deleted(cls, request, task, comment_id) -> None:
+        log_event(
+            action=AuditEvents.TASK_UPDATED,
+            actor=request.user,
+            object_type="task",
+            object_id=str(task.id),
+            level="info",
+            category="content",
+            ip_address=cls._ip(request),
+            metadata={
+                "actor_id": request.user.id,
+                "comment_id": comment_id,
+                "changed_fields": ["comment_deleted"],
+            },
+        )
+
+    @classmethod
+    def log_subtask_changed(cls, request, task, subtask_id, action_name: str) -> None:
+        log_event(
+            action=AuditEvents.TASK_UPDATED,
+            actor=request.user,
+            object_type="task",
+            object_id=str(task.id),
+            level="info",
+            category="content",
+            ip_address=cls._ip(request),
+            metadata={
+                "actor_id": request.user.id,
+                "subtask_id": subtask_id,
+                "changed_fields": [action_name],
+            },
+        )
