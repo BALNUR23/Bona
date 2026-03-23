@@ -277,6 +277,8 @@ class TasksApiTests(TestCase):
         board = Board.objects.get(name="CRM rollout")
         self.assertFalse(board.is_personal)
         self.assertEqual(board.created_by, self.lead)
+        self.assertEqual(board.responsible_user, self.lead)
+        self.assertEqual(board.status, Board.Status.ACTIVE)
         self.assertEqual(set(board.members.values_list("id", flat=True)), {self.lead.id, self.subordinate.id})
         self.assertEqual(board.columns.count(), 5)
 
@@ -292,6 +294,28 @@ class TasksApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Board.objects.filter(name="Forbidden project").exists())
+
+    def test_project_response_contains_extended_fields(self):
+        board = Board.objects.create(
+            name="Project structure",
+            description="Board with extra fields",
+            is_personal=False,
+            created_by=self.lead,
+            responsible_user=self.subordinate,
+            status=Board.Status.PLANNING,
+            end_date=timezone.localdate() + timedelta(days=7),
+            department=self.department,
+        )
+        board.members.set([self.lead, self.subordinate])
+
+        self.client.force_authenticate(user=self.lead)
+        response = self.client.get("/api/v1/tasks/projects/")
+        self.assertEqual(response.status_code, 200)
+        project = next(item for item in response.data if item["id"] == board.id)
+        self.assertEqual(project["status"], Board.Status.PLANNING)
+        self.assertEqual(project["responsible_user"], self.subordinate.id)
+        self.assertIn("created_at", project)
+        self.assertEqual(project["end_date"], board.end_date.isoformat())
 
     @patch("apps.tasks.views.TasksAuditService.log_task_created")
     def test_teamlead_can_create_task_inside_project_board(self, log_task_created):
@@ -360,6 +384,59 @@ class TasksApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         titles = {item["title"] for item in response.data}
         self.assertEqual(titles, {"Project task"})
+
+    def test_project_report_endpoint_returns_summary_and_overdue_tasks(self):
+        board = Board.objects.create(
+            name="Project report",
+            is_personal=False,
+            created_by=self.lead,
+            department=self.department,
+        )
+        board.members.set([self.lead, self.subordinate])
+        self._create_columns_for_board(board)
+
+        todo_column = board.columns.get(order=1)
+        in_progress_column = board.columns.get(order=2)
+        done_column = board.columns.get(order=4)
+
+        Task.objects.create(
+            board=board,
+            column=todo_column,
+            title="Overdue task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            status=Task.Status.TO_DO,
+            due_date=timezone.localdate() - timedelta(days=1),
+        )
+        Task.objects.create(
+            board=board,
+            column=in_progress_column,
+            title="In progress task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            status=Task.Status.IN_PROGRESS,
+        )
+        Task.objects.create(
+            board=board,
+            column=done_column,
+            title="Completed task",
+            assignee=self.subordinate,
+            reporter=self.lead,
+            status=Task.Status.DONE,
+        )
+
+        self.client.force_authenticate(user=self.subordinate)
+        response = self.client.get(f"/api/v1/tasks/projects/{board.id}/report/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total_task_count"], 3)
+        self.assertEqual(response.data["completed_task_count"], 1)
+        self.assertEqual(response.data["progress_percentage"], 33)
+        self.assertEqual(response.data["status_counts"]["to_do"], 1)
+        self.assertEqual(response.data["status_counts"]["in_progress"], 1)
+        self.assertEqual(response.data["status_counts"]["done"], 1)
+        self.assertEqual(response.data["overdue_task_count"], 1)
+        self.assertEqual(len(response.data["overdue_tasks"]), 1)
+        self.assertEqual(response.data["overdue_tasks"][0]["title"], "Overdue task")
 
     def test_filter_tasks_by_priority_and_status(self):
         board = self._create_default_board(self.subordinate)

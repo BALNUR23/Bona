@@ -224,7 +224,7 @@ def content_dashboard(request):
                 "title": "Новости компании",
                 "desc": "Публикация новостей и объявлений для сотрудников.",
                 "meta": f"{News.objects.count()} опубликовано",
-                "url": "/admin/content/news/",
+                "url": "/admin/panel/content/news/",
                 "action": "Перейти",
             },
             {
@@ -232,7 +232,7 @@ def content_dashboard(request):
                 "title": "Инструкция по платформе",
                 "desc": "Текст, ссылки и файлы с инструкциями.",
                 "meta": f"{Instruction.objects.filter(is_active=True).count()} активна",
-                "url": "/admin/content/instruction/",
+                "url": "/admin/panel/content/instruction/",
                 "action": "Редактировать",
             },
             {
@@ -240,7 +240,7 @@ def content_dashboard(request):
                 "title": "Обратная связь",
                 "desc": "Жалобы, предложения и отзывы сотрудников.",
                 "meta": f"{Feedback.objects.filter(status='new').count()} новых",
-                "url": "/admin/content/feedback/",
+                "url": "/admin/panel/content/feedback/",
                 "action": "Перейти",
             },
             {
@@ -248,7 +248,7 @@ def content_dashboard(request):
                 "title": "Компания: структура",
                 "desc": "Иерархия отделов и распределение сотрудников по командам.",
                 "meta": f"{Department.objects.filter(is_active=True).count()} активных отделов",
-                "url": "/admin/company/structure/",
+                "url": "/admin/panel/company/structure/",
                 "action": "Открыть",
             },
             {
@@ -256,7 +256,7 @@ def content_dashboard(request):
                 "title": "Компания: список",
                 "desc": "Список сотрудников компании с фильтрами и быстрым поиском.",
                 "meta": f"{User.objects.filter(is_active=True).exclude(role__name=Role.Name.SUPER_ADMIN).count()} сотрудников",
-                "url": "/admin/company/list/",
+                "url": "/admin/panel/company/list/",
                 "action": "Открыть",
             },
             {
@@ -264,7 +264,7 @@ def content_dashboard(request):
                 "title": "Регламенты",
                 "desc": "База документов и внутренних правил.",
                 "meta": f"{Regulation.objects.count()} документов",
-                "url": "/admin/regulations/regulation/",
+                "url": "/admin/panel/regulations/regulation/",
                 "action": "Перейти",
             },
         ],

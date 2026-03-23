@@ -5,6 +5,13 @@ from accounts.models import Department
 
 
 class Board(models.Model):
+    class Status(models.TextChoices):
+        PLANNING = "planning", "Planning"
+        ACTIVE = "active", "Active"
+        ON_HOLD = "on_hold", "On Hold"
+        COMPLETED = "completed", "Completed"
+        ARCHIVED = "archived", "Archived"
+
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True, default="")
     department = models.ForeignKey(
@@ -20,16 +27,29 @@ class Board(models.Model):
         on_delete=models.CASCADE,
         related_name="created_boards",
     )
+    responsible_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="responsible_boards",
+    )
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
         related_name="task_boards",
     )
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    end_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         indexes = [
             models.Index(fields=["is_personal"]),
             models.Index(fields=["department"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["end_date"]),
         ]
 
     def __str__(self):
@@ -168,6 +188,25 @@ class SubTask(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="created_subtasks",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.task_id}:{self.title}"
+
+
+class ChecklistItem(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="checklist_items")
+    title = models.CharField(max_length=255)
+    is_completed = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="created_checklist_items",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

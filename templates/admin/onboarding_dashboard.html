@@ -33,7 +33,7 @@
           <td>{{ r.created_at|date:"d M Y" }}</td>
           <td><span class="onb-badge" style="--c: {{ r.status_meta.color }};">{{ r.status_meta.label }}</span></td>
           <td>
-            <a href="/admin/reports/onboardingreport/{{ r.id }}/change/" title="Открыть">👁</a>
+            <a href="/admin/panel/reports/onboardingreport/{{ r.id }}/change/" title="Открыть">👁</a>
           </td>
         </tr>
       {% empty %}
@@ -55,7 +55,7 @@
           <td>{{ d.title }}</td>
           <td>{{ d.materials_count }}</td>
           <td>{% if d.is_active %}<span style="color:#16a34a">● Активен</span>{% else %}<span style="color:#64748b">● Неактивен</span>{% endif %}</td>
-          <td><a href="/admin/onboarding_core/onboardingday/{{ d.id }}/change/">👁</a></td>
+          <td><a href="/admin/panel/onboarding_core/onboardingday/{{ d.id }}/change/">👁</a></td>
         </tr>
       {% empty %}
         <tr><td colspan="5" class="onb-empty">Нет дней</td></tr>
@@ -75,7 +75,7 @@
           <td>{{ m.day.title }}</td>
           <td>{{ m.get_type_display }}</td>
           <td>{{ m.content|truncatechars:70 }}</td>
-          <td><a href="/admin/onboarding_core/onboardingmaterial/{{ m.id }}/change/">👁</a></td>
+          <td><a href="/admin/panel/onboarding_core/onboardingmaterial/{{ m.id }}/change/">👁</a></td>
         </tr>
       {% empty %}
         <tr><td colspan="4" class="onb-empty">Нет материалов</td></tr>

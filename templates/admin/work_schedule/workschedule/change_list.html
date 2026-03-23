@@ -4,10 +4,10 @@
   {{ block.super }}
   {% if pending_weekly_plans_count is not None %}
   <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;">
-    <a href="/admin/work_schedule/weeklyworkplan/?status__exact=pending" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #d1d5db;text-decoration:none;">
+    <a href="/admin/panel/work_schedule/weeklyworkplan/?status__exact=pending" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #d1d5db;text-decoration:none;">
       Заявки недельных календарей: <strong>{{ pending_weekly_plans_count }}</strong>
     </a>
-    <a href="/admin/work_schedule/userworkschedule/?approved__exact=0" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #d1d5db;text-decoration:none;">
+    <a href="/admin/panel/work_schedule/userworkschedule/?approved__exact=0" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid #d1d5db;text-decoration:none;">
       Запросы выбора графика: <strong>{{ pending_schedule_requests_count }}</strong>
     </a>
   </div>

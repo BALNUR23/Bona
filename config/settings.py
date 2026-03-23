@@ -207,7 +207,7 @@ USE_TZ = True
 LANGUAGES = [
     ("ru", "Русский"),
     ("en", "English"),
-    ("kg", "Kyrgyz"),
+    ("ky", "Kyrgyz"),
 ]
 
 # ======================
@@ -259,31 +259,31 @@ if HAS_UNFOLD:
                         {
                             "title": "Регламенты",
                             "icon": "description",
-                            "link": "/admin/regulations/regulation/",
+                            "link": "/admin/panel/regulations/regulation/",
                             "permission": lambda request: _is_admin_like(request) or _is_employee(request),
                         },
                         {
                             "title": "График работы",
                             "icon": "calendar_month",
-                            "link": "/admin/work_schedule/weeklyworkplan/",
+                            "link": "/admin/panel/work_schedule/weeklyworkplan/",
                             "permission": _is_employee,
                         },
                         {
                             "title": "Отметка",
                             "icon": "fact_check",
-                            "link": "/admin/attendance/check-in/",
+                            "link": "/admin/panel/attendance/check-in/",
                             "permission": _is_employee,
                         },
                         {
                             "title": "Профиль",
                             "icon": "person",
-                            "link": "/admin/accounts/user/",
+                            "link": "/admin/panel/accounts/user/",
                             "permission": lambda request: _is_admin_like(request) or _is_employee(request),
                         },
                         {
                             "title": "Инструкция",
                             "icon": "menu_book",
-                            "link": "/admin/content/instruction/",
+                            "link": "/admin/panel/content/instruction/",
                             "permission": _is_employee,
                         },
                     ],
@@ -301,49 +301,55 @@ if HAS_UNFOLD:
                         {
                             "title": "Пользователи",
                             "icon": "group",
-                            "link": "/admin/accounts/user/",
+                            "link": "/admin/panel/accounts/user/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Контент",
                             "icon": "article",
-                            "link": "/admin/content/",
+                            "link": "/admin/panel/content/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Онбординг / Отчёты",
                             "icon": "school",
-                            "link": "/admin/onboarding/",
+                            "link": "/admin/panel/onboarding/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Графики работы",
                             "icon": "calendar_month",
-                            "link": "/admin/work_schedule",
+                            "link": "/admin/panel/work_schedule",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Недельные планы",
                             "icon": "event_note",
-                            "link": "/admin/work_schedule/weeklyworkplan/",
+                            "link": "/admin/panel/work_schedule/weeklyworkplan/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Посещаемость",
                             "icon": "fact_check",
-                            "link": "/admin/attendance/attendancemark/",
+                            "link": "/admin/panel/attendance/attendancemark/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Check-in сессии",
                             "icon": "pin_drop",
-                            "link": "/admin/attendance/attendancesession/",
+                            "link": "/admin/panel/attendance/attendancesession/",
                             "permission": _is_admin_like,
                         },
                         {
                             "title": "Обратная связь",
                             "icon": "feedback",
-                            "link": "/admin/content/feedback/",
+                            "link": "/admin/panel/content/feedback/",
+                            "permission": _is_admin_like,
+                        },
+                        {
+                            "title": "Задачи",
+                            "icon": "task",
+                            "link": "/admin/panel/tasks/task/",
                             "permission": _is_admin_like,
                         },
                     ],
@@ -477,4 +483,3 @@ SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", True)
 CSRF_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SAMESITE = "Lax"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-

@@ -1,5 +1,4 @@
 ﻿from datetime import timedelta
-
 from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -13,11 +12,15 @@ from accounts.models import AuditLog, Role, User
 from onboarding_core.models import OnboardingDay
 from work_schedule.models import WeeklyWorkPlan
 from .audit import TasksAuditService
-from .models import Board, Column, SubTask, Task, TaskComment
+from .models import Board, ChecklistItem, Column, SubTask, Task, TaskComment
 from .policies import TaskPolicy
 from .serializers import (
     ProjectSerializer,
+    ProjectReportTaskSerializer,
     ProjectWriteSerializer,
+    ChecklistItemCreateSerializer,
+    ChecklistItemSerializer,
+    ChecklistItemUpdateSerializer,
     SubTaskCreateSerializer,
     SubTaskSerializer,
     SubTaskUpdateSerializer,
@@ -49,6 +52,28 @@ STATUS_TO_COLUMN_ORDER = {
 }
 
 COLUMN_ORDER_TO_STATUS = {value: key for key, value in STATUS_TO_COLUMN_ORDER.items()}
+
+
+def _with_project_stats(qs):
+    today = timezone.localdate()
+    return qs.annotate(
+        task_count=Count("tasks", distinct=True),
+        completed_task_count=Count(
+            "tasks",
+            filter=Q(tasks__status=Task.Status.DONE),
+            distinct=True,
+        ),
+        in_progress_task_count=Count(
+            "tasks",
+            filter=Q(tasks__status=Task.Status.IN_PROGRESS),
+            distinct=True,
+        ),
+        overdue_task_count=Count(
+            "tasks",
+            filter=Q(tasks__due_date__lt=today) & ~Q(tasks__status=Task.Status.DONE),
+            distinct=True,
+        ),
+    )
 
 
 def _ensure_default_columns(board: Board) -> None:
@@ -139,6 +164,23 @@ def _next_monday(today):
     return today + timedelta(days=days_ahead or 7)
 
 
+def _find_duplicate_task(*, board, title, assignee, reporter, due_date):
+    normalized_title = (title or "").strip()
+    if not normalized_title:
+        return None
+    return (
+        Task.objects.filter(
+            board=board,
+            title=normalized_title,
+            assignee=assignee,
+            reporter=reporter,
+            due_date=due_date,
+        )
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+
 def _ensure_weekly_plan_task_for_user(*, assignee, reporter):
     next_week_start = _next_monday(timezone.localdate())
     has_plan = WeeklyWorkPlan.objects.filter(user=assignee, week_start=next_week_start).exists()
@@ -191,16 +233,23 @@ class TaskTeamAPIView(APIView):
         if not TaskPolicy.can_manage_team(request.user):
             return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
 
-        if TaskPolicy.is_admin_like(request.user):
+        if TaskPolicy.is_full_admin(request.user):
             team_users = User.objects.filter(
                 is_active=True,
-                role__name__in=[Role.Name.TEAMLEAD, Role.Name.EMPLOYEE, Role.Name.INTERN],
+                role__name__in=[Role.Name.ADMIN, Role.Name.TEAMLEAD, Role.Name.EMPLOYEE],
             )
             qs = Task.objects.all()
-            if TaskPolicy.is_department_admin(request.user):
-                if request.user.department_id:
-                    team_users = team_users.filter(department_id=request.user.department_id)
-                    qs = qs.filter(assignee__department_id=request.user.department_id)
+        elif TaskPolicy.is_department_head(request.user):
+            if request.user.department_id:
+                team_users = User.objects.filter(
+                    is_active=True,
+                    department_id=request.user.department_id,
+                    role__name__in=[Role.Name.ADMIN, Role.Name.TEAMLEAD, Role.Name.EMPLOYEE],
+                )
+                qs = Task.objects.filter(assignee__department_id=request.user.department_id)
+            else:
+                team_users = User.objects.none()
+                qs = Task.objects.none()
         else:
             team_users = request.user.team_members.filter(is_active=True)
             qs = Task.objects.filter(assignee__manager=request.user)
@@ -241,6 +290,21 @@ class TaskCreateAPIView(APIView):
         onboarding_day_id = serializer.validated_data.get("onboarding_day_id")
         if onboarding_day_id:
             onboarding_day = get_object_or_404(OnboardingDay, id=onboarding_day_id)
+        duplicate = _find_duplicate_task(
+            board=board,
+            title=serializer.validated_data["title"],
+            assignee=assignee,
+            reporter=request.user,
+            due_date=serializer.validated_data.get("due_date"),
+        )
+        if duplicate is not None:
+            return Response(
+                {
+                    "detail": "Такая задача уже существует.",
+                    "task_id": duplicate.id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         task = Task.objects.create(
             board=board,
             column=column,
@@ -262,16 +326,20 @@ class TaskAssigneesAPIView(APIView):
 
     def get(self, request):
         user = request.user
-        if TaskPolicy.is_admin_like(user):
+        if TaskPolicy.is_full_admin(user):
             qs = User.objects.filter(
                 is_active=True,
-                role__name__in=[Role.Name.TEAMLEAD, Role.Name.EMPLOYEE, Role.Name.INTERN],
+                role__name__in=[Role.Name.ADMIN, Role.Name.TEAMLEAD, Role.Name.EMPLOYEE],
             )
-            if TaskPolicy.is_department_admin(user):
-                if user.department_id:
-                    qs = qs.filter(department_id=user.department_id)
-                else:
-                    qs = qs.none()
+        elif TaskPolicy.is_department_head(user):
+            if user.department_id:
+                qs = User.objects.filter(
+                    is_active=True,
+                    department_id=user.department_id,
+                    role__name__in=[Role.Name.ADMIN, Role.Name.TEAMLEAD, Role.Name.EMPLOYEE],
+                )
+            else:
+                qs = User.objects.none()
         elif AccessPolicy.is_teamlead(user):
             qs = User.objects.filter(Q(id=user.id) | Q(manager_id=user.id), is_active=True)
         else:
@@ -342,6 +410,15 @@ class TaskDetailAPIView(APIView):
             TasksAuditService.log_task_updated(request, task, changed_fields)
         return Response(TaskSerializer(task, context={"request": request}).data)
 
+    def delete(self, request, pk):
+        task = get_object_or_404(Task.objects.select_related("assignee", "column", "board"), pk=pk)
+        if not TaskPolicy.can_delete_task(request.user, task):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+        task_id = task.id
+        TasksAuditService.log_task_deleted(request, task)
+        task.delete()
+        return Response({"detail": "Task deleted.", "task_id": task_id}, status=status.HTTP_200_OK)
+
 
 class TaskMoveAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -373,7 +450,7 @@ class ProjectListCreateAPIView(APIView):
 
     def get(self, request):
         qs = TaskPolicy.visible_project_boards(request.user)
-        qs = qs.annotate(task_count=Count("tasks", distinct=True)).order_by("name", "id")
+        qs = _with_project_stats(qs).order_by("name", "id")
         return Response(ProjectSerializer(qs, many=True, context={"request": request}).data)
 
     def post(self, request):
@@ -395,6 +472,11 @@ class ProjectListCreateAPIView(APIView):
             description=serializer.validated_data.get("description", ""),
             is_personal=False,
             created_by=request.user,
+            responsible_user=get_object_or_404(User, id=serializer.validated_data["responsible_user_id"])
+            if serializer.validated_data.get("responsible_user_id")
+            else request.user,
+            status=serializer.validated_data.get("status", Board.Status.ACTIVE),
+            end_date=serializer.validated_data.get("end_date"),
             department=request.user.department,
         )
         member_ids_set = set(member_ids)
@@ -403,9 +485,10 @@ class ProjectListCreateAPIView(APIView):
         board.members.set(members)
         _ensure_default_columns(board)
         board = (
-            Board.objects.select_related("created_by", "department")
+            _with_project_stats(
+                Board.objects.select_related("created_by", "department")
             .prefetch_related("members")
-            .annotate(task_count=Count("tasks", distinct=True))
+            )
             .get(id=board.id)
         )
         return Response(ProjectSerializer(board, context={"request": request}).data, status=status.HTTP_201_CREATED)
@@ -416,10 +499,11 @@ class ProjectDetailAPIView(APIView):
 
     def get(self, request, pk):
         board = get_object_or_404(
-            Board.objects.filter(is_personal=False)
+            _with_project_stats(
+                Board.objects.filter(is_personal=False)
             .select_related("created_by", "department")
             .prefetch_related("members")
-            .annotate(task_count=Count("tasks", distinct=True)),
+            ),
             pk=pk,
         )
         if not TaskPolicy.can_view_board(request.user, board):
@@ -444,6 +528,20 @@ class ProjectDetailAPIView(APIView):
         if "description" in serializer.validated_data:
             board.description = serializer.validated_data["description"]
             updated_fields.append("description")
+        if "status" in serializer.validated_data:
+            board.status = serializer.validated_data["status"]
+            updated_fields.append("status")
+        if "end_date" in serializer.validated_data:
+            board.end_date = serializer.validated_data["end_date"]
+            updated_fields.append("end_date")
+        if "responsible_user_id" in serializer.validated_data:
+            responsible_user_id = serializer.validated_data["responsible_user_id"]
+            board.responsible_user = (
+                get_object_or_404(User, id=responsible_user_id)
+                if responsible_user_id
+                else None
+            )
+            updated_fields.append("responsible_user")
         if updated_fields:
             board.save(update_fields=updated_fields)
 
@@ -465,9 +563,10 @@ class ProjectDetailAPIView(APIView):
                 Task.objects.filter(board=board, assignee_id__in=removed_member_ids).update(assignee=None)
 
         board = (
-            Board.objects.select_related("created_by", "department")
+            _with_project_stats(
+                Board.objects.select_related("created_by", "department")
             .prefetch_related("members")
-            .annotate(task_count=Count("tasks", distinct=True))
+            )
             .get(id=board.id)
         )
         return Response(ProjectSerializer(board, context={"request": request}).data)
@@ -484,6 +583,135 @@ class ProjectTasksAPIView(APIView):
         qs = _apply_task_filters(qs, request.query_params)
         qs = qs.select_related("assignee", "reporter", "column", "board")
         return Response(TaskSerializer(qs, many=True, context={"request": request}).data)
+
+
+class ProjectReportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        board = get_object_or_404(
+            _with_project_stats(
+                Board.objects.filter(is_personal=False)
+                .select_related("created_by", "department", "responsible_user")
+                .prefetch_related("members")
+            ),
+            pk=pk,
+        )
+        if not TaskPolicy.can_view_board(request.user, board):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+
+        tasks_qs = (
+            Task.objects.filter(board=board)
+            .select_related("assignee", "reporter", "column", "board")
+            .order_by("id")
+        )
+        today = timezone.localdate()
+        overdue_qs = tasks_qs.filter(due_date__lt=today).exclude(status=Task.Status.DONE)
+
+        total_count = getattr(board, "task_count", 0) or 0
+        completed_count = getattr(board, "completed_task_count", 0) or 0
+        progress_percentage = round((completed_count / total_count) * 100) if total_count else 0
+
+        status_counts = {
+            "to_do": tasks_qs.filter(status=Task.Status.TO_DO).count(),
+            "in_progress": tasks_qs.filter(status=Task.Status.IN_PROGRESS).count(),
+            "review": tasks_qs.filter(status=Task.Status.REVIEW).count(),
+            "done": tasks_qs.filter(status=Task.Status.DONE).count(),
+            "blocked": tasks_qs.filter(status=Task.Status.BLOCKED).count(),
+        }
+
+        member_names = [
+            member.get_full_name() or member.username
+            for member in board.members.all().order_by("id")
+        ]
+        responsible_name = None
+        if board.responsible_user_id:
+            responsible_name = board.responsible_user.get_full_name() or board.responsible_user.username
+
+        assignee_stats = []
+        for member in board.members.all().order_by("id"):
+            member_tasks = tasks_qs.filter(assignee=member)
+            member_total = member_tasks.count()
+            member_done = member_tasks.filter(status=Task.Status.DONE).count()
+            member_in_progress = member_tasks.filter(status=Task.Status.IN_PROGRESS).count()
+            member_review = member_tasks.filter(status=Task.Status.REVIEW).count()
+            member_blocked = member_tasks.filter(status=Task.Status.BLOCKED).count()
+            member_progress = round((member_done / member_total) * 100) if member_total else 0
+            assignee_stats.append(
+                {
+                    "name": member.get_full_name() or member.username,
+                    "username": member.username,
+                    "total": member_total,
+                    "done": member_done,
+                    "in_progress": member_in_progress,
+                    "review": member_review,
+                    "blocked": member_blocked,
+                    "progress": member_progress,
+                }
+            )
+
+        overdue_lines = [
+            f"- {task.title} ({task.assignee.username if task.assignee_id else 'Без исполнителя'}, срок: {task.due_date or '—'})"
+            for task in overdue_qs
+        ]
+        status_lines = [
+            f"- К выполнению: {status_counts['to_do']}",
+            f"- В работе: {status_counts['in_progress']}",
+            f"- На проверке: {status_counts['review']}",
+            f"- Выполнено: {status_counts['done']}",
+            f"- Заблокировано: {status_counts['blocked']}",
+        ]
+        assignee_lines = [
+            f"- {item['name']}: всего {item['total']}, выполнено {item['done']}, в работе {item['in_progress']}, на проверке {item['review']}, прогресс {item['progress']}%"
+            for item in assignee_stats
+        ]
+        template_report = "\n".join(
+            [
+                "Название проекта",
+                board.name,
+                "",
+                board.created_at.strftime("%d.%m.%Y") if board.created_at else "—",
+                "─",
+                "В команде:",
+                ", ".join(member_names) if member_names else "—",
+                "",
+                "О проекте",
+                board.description or "Описание проекта пока не добавлено.",
+                "",
+                "Насколько проект готов",
+                f"Статус проекта: {board.get_status_display()}",
+                f"Руководитель проекта: {responsible_name or '—'}",
+                f"Общее количество задач: {total_count}",
+                f"Процент выполнения: {progress_percentage}%",
+                "Задачи по статусам:",
+                *status_lines,
+                "",
+                "Эффективность членов команды",
+                *(assignee_lines or ["- Пока нет участников проекта"]),
+                "",
+                "Просроченные задачи",
+                f"Количество просроченных задач: {overdue_qs.count()}",
+                "Список:",
+                *(overdue_lines or ["- Нет просроченных задач"]),
+            ]
+        )
+
+        payload = {
+            "project": ProjectSerializer(board, context={"request": request}).data,
+            "total_task_count": total_count,
+            "completed_task_count": completed_count,
+            "progress_percentage": progress_percentage,
+            "status_counts": status_counts,
+            "overdue_task_count": overdue_qs.count(),
+            "overdue_tasks": ProjectReportTaskSerializer(
+                overdue_qs,
+                many=True,
+                context={"request": request},
+            ).data,
+            "assignee_stats": assignee_stats,
+            "template_report": template_report,
+        }
+        return Response(payload)
 
 
 class TaskCommentsAPIView(APIView):
@@ -567,7 +795,7 @@ class TaskSubTasksAPIView(APIView):
 
     def post(self, request, pk):
         task = get_object_or_404(Task.objects.select_related("assignee", "reporter", "column", "board"), pk=pk)
-        if not TaskPolicy.can_edit_task(request.user, task):
+        if not TaskPolicy.can_manage_task_items(request.user, task):
             return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
         serializer = SubTaskCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -617,4 +845,69 @@ class TaskSubTaskDetailAPIView(APIView):
         deleted_id = subtask.id
         subtask.delete()
         TasksAuditService.log_subtask_changed(request, task, deleted_id, "subtask_deleted")
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TaskChecklistAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        task = get_object_or_404(Task.objects.select_related("assignee", "reporter", "column", "board"), pk=pk)
+        if not TaskPolicy.can_view_task(request.user, task):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+        items = task.checklist_items.select_related("created_by")
+        return Response(ChecklistItemSerializer(items, many=True, context={"request": request}).data)
+
+    def post(self, request, pk):
+        task = get_object_or_404(Task.objects.select_related("assignee", "reporter", "column", "board"), pk=pk)
+        if not TaskPolicy.can_manage_task_items(request.user, task):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ChecklistItemCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        item = ChecklistItem.objects.create(
+            task=task,
+            title=serializer.validated_data["title"],
+            created_by=request.user,
+        )
+        TasksAuditService.log_subtask_changed(request, task, item.id, "checklist_item_created")
+        return Response(ChecklistItemSerializer(item, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+class TaskChecklistDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk, item_id):
+        item = get_object_or_404(
+            ChecklistItem.objects.select_related("task", "task__assignee", "task__column", "created_by"),
+            pk=item_id,
+            task_id=pk,
+        )
+        if not TaskPolicy.can_manage_task_items(request.user, item.task):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ChecklistItemUpdateSerializer(data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        changed = []
+        if "title" in serializer.validated_data:
+            item.title = serializer.validated_data["title"]
+            changed.append("title")
+        if "is_completed" in serializer.validated_data:
+            item.is_completed = serializer.validated_data["is_completed"]
+            changed.append("is_completed")
+        if changed:
+            item.save(update_fields=changed + ["updated_at"])
+            TasksAuditService.log_subtask_changed(request, item.task, item.id, "checklist_item_updated")
+        return Response(ChecklistItemSerializer(item, context={"request": request}).data)
+
+    def delete(self, request, pk, item_id):
+        item = get_object_or_404(
+            ChecklistItem.objects.select_related("task", "task__assignee", "task__column", "created_by"),
+            pk=item_id,
+            task_id=pk,
+        )
+        if not TaskPolicy.can_manage_task_items(request.user, item.task):
+            return Response({"detail": "Access denied."}, status=status.HTTP_403_FORBIDDEN)
+        task = item.task
+        deleted_id = item.id
+        item.delete()
+        TasksAuditService.log_subtask_changed(request, task, deleted_id, "checklist_item_deleted")
         return Response(status=status.HTTP_204_NO_CONTENT)

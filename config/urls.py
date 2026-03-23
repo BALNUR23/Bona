@@ -8,8 +8,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .admin_views import (
     attendance_checkin_page,
+    company_list_page,
+    company_structure_page,
     content_dashboard,
     onboarding_dashboard,
+    office_networks_page,
+    profile_page,
     work_schedule_board_page,
 )
 from .health import health_check
@@ -34,7 +38,10 @@ urlpatterns = [
     path("admin/panel/content/", content_dashboard, name="admin-content-dashboard"),
     path("admin/panel/attendance/check-in/", attendance_checkin_page, name="admin-attendance-checkin-page"),
     path("admin/panel/work-schedule-board/", work_schedule_board_page, name="admin-work-schedule-board"),
-    path("admin/panel/login/", RedirectView.as_view(url="/login/", permanent=False), name="admin-panel-login-redirect"),
+    path("admin/panel/company/structure/", company_structure_page, name="admin-company-structure"),
+    path("admin/panel/company/list/", company_list_page, name="admin-company-list"),
+    path("admin/panel/office-networks/", office_networks_page, name="admin-office-networks"),
+    path("admin/panel/profile/", profile_page, name="admin-profile"),
     path("admin/panel/", admin.site.urls),
     re_path(r"^admin/(?!login(?:/|$)|panel(?:/|$)).*$", spa_portal, name="spa-admin-catch-all"),
 

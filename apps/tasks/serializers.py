@@ -6,7 +6,7 @@ from rest_framework.exceptions import ErrorDetail
 from accounts.models import AuditLog
 from common.i18n import request_language, status_label, tr
 
-from .models import Board, Column, SubTask, Task, TaskComment
+from .models import Board, ChecklistItem, Column, SubTask, Task, TaskComment
 
 
 User = get_user_model()
@@ -26,6 +26,9 @@ class TaskSerializer(serializers.ModelSerializer):
     assignee_display = serializers.SerializerMethodField()
     subtasks_total = serializers.SerializerMethodField()
     subtasks_completed = serializers.SerializerMethodField()
+    checklist_total = serializers.SerializerMethodField()
+    checklist_completed = serializers.SerializerMethodField()
+    completion_percentage = serializers.SerializerMethodField()
     can_complete_parent = serializers.SerializerMethodField()
 
     class Meta:
@@ -51,6 +54,9 @@ class TaskSerializer(serializers.ModelSerializer):
             "is_overdue",
             "subtasks_total",
             "subtasks_completed",
+            "checklist_total",
+            "checklist_completed",
+            "completion_percentage",
             "can_complete_parent",
             "onboarding_day",
             "column_name",
@@ -96,6 +102,24 @@ class TaskSerializer(serializers.ModelSerializer):
         if total == 0:
             return False
         return obj.subtasks.filter(is_completed=True).count() == total and obj.status != Task.Status.DONE
+
+    def get_checklist_total(self, obj):
+        return obj.checklist_items.count()
+
+    def get_checklist_completed(self, obj):
+        return obj.checklist_items.filter(is_completed=True).count()
+
+    def get_completion_percentage(self, obj):
+        subtasks_total = obj.subtasks.count()
+        checklist_total = obj.checklist_items.count()
+        total_items = subtasks_total + checklist_total
+        if total_items == 0:
+            return 0
+        completed_items = (
+            obj.subtasks.filter(is_completed=True).count()
+            + obj.checklist_items.filter(is_completed=True).count()
+        )
+        return round((completed_items / total_items) * 100)
 
 
 class TaskCreateSerializer(serializers.Serializer):
@@ -175,7 +199,20 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     members = ProjectMemberSerializer(many=True, read_only=True)
     task_count = serializers.IntegerField(read_only=True)
+    completed_task_count = serializers.IntegerField(read_only=True)
+    in_progress_task_count = serializers.IntegerField(read_only=True)
+    overdue_task_count = serializers.IntegerField(read_only=True)
+    progress_percentage = serializers.SerializerMethodField()
     created_by_username = serializers.CharField(source="created_by.username", read_only=True)
+    responsible_user_username = serializers.CharField(source="responsible_user.username", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    def get_progress_percentage(self, obj):
+        total = getattr(obj, "task_count", 0) or 0
+        completed = getattr(obj, "completed_task_count", 0) or 0
+        if total <= 0:
+            return 0
+        return round((completed / total) * 100)
 
     class Meta:
         model = Board
@@ -183,23 +220,51 @@ class ProjectSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "description",
+            "status",
+            "status_label",
+            "end_date",
+            "created_at",
+            "updated_at",
             "department",
             "created_by",
             "created_by_username",
+            "responsible_user",
+            "responsible_user_username",
             "members",
             "task_count",
+            "completed_task_count",
+            "in_progress_task_count",
+            "overdue_task_count",
+            "progress_percentage",
         )
-        read_only_fields = ("created_by",)
+        read_only_fields = ("created_by", "created_at", "updated_at")
 
 
 class ProjectWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)
     description = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.ChoiceField(choices=Board.Status.choices, required=False)
+    end_date = serializers.DateField(required=False, allow_null=True)
+    responsible_user_id = serializers.IntegerField(required=False, allow_null=True)
     member_ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),
         required=False,
         allow_empty=True,
     )
+
+    def validate_responsible_user_id(self, value):
+        if value is None:
+            return value
+        user = User.objects.filter(id=value).first()
+        if not user:
+            request = self.context.get("request")
+            raise serializers.ValidationError(
+                ErrorDetail(
+                    tr("assignee_not_found", request_language(request)),
+                    code="assignee_not_found",
+                )
+            )
+        return value
 
 
 class TaskCommentSerializer(serializers.ModelSerializer):
@@ -248,3 +313,59 @@ class SubTaskCreateSerializer(serializers.Serializer):
 class SubTaskUpdateSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255, required=False)
     is_completed = serializers.BooleanField(required=False)
+
+
+class ChecklistItemSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = ChecklistItem
+        fields = (
+            "id",
+            "task",
+            "title",
+            "is_completed",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("task", "created_by", "created_at", "updated_at")
+
+
+class ChecklistItemCreateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255)
+
+
+class ChecklistItemUpdateSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=255, required=False)
+    is_completed = serializers.BooleanField(required=False)
+
+
+class ProjectReportTaskSerializer(serializers.ModelSerializer):
+    assignee_username = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    is_overdue = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Task
+        fields = (
+            "id",
+            "title",
+            "assignee_username",
+            "status",
+            "status_label",
+            "priority",
+            "due_date",
+            "is_overdue",
+        )
+
+    def get_assignee_username(self, obj):
+        return obj.assignee.username if obj.assignee_id and obj.assignee else ""
+
+    def get_is_overdue(self, obj):
+        if not obj.due_date:
+            return False
+        if obj.status == Task.Status.DONE:
+            return False
+        return obj.due_date < timezone.localdate()

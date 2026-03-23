@@ -48,6 +48,22 @@ class TasksAuditService:
         )
 
     @classmethod
+    def log_task_deleted(cls, request, task) -> None:
+        log_event(
+            action=AuditEvents.TASK_UPDATED,
+            actor=request.user,
+            object_type="task",
+            object_id=str(task.id),
+            level="warning",
+            category="content",
+            ip_address=cls._ip(request),
+            metadata={
+                "actor_id": request.user.id,
+                "changed_fields": ["deleted"],
+            },
+        )
+
+    @classmethod
     def log_task_moved(cls, request, task, from_column_id: int, to_column_id: int) -> None:
         log_event(
             action=AuditEvents.TASK_MOVED,
